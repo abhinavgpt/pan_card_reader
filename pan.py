@@ -80,7 +80,8 @@ def extract_rois(img):
     img = (255*img).astype(np.uint8)
     cv_show(img, title="Contrast stretched", is_debug=is_debug)
 
-    # Applying the blackhat operator to highlight the black regions
+    # Applying the blackhat operator to convert the black regions into white regions
+    # Note that after this operation we need to look at the brightest regions in the image
     img = cv2.morphologyEx(img, cv2.MORPH_BLACKHAT, rectKernel)
     blackhatted = img.copy()
     cv_show(img, title="Blackhatted", is_debug=is_debug)
@@ -95,34 +96,42 @@ def extract_rois(img):
     img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, rectKernel)
     cv_show(img, "Closed", is_debug=is_debug)
 
+    # Calculating the 95th percentile value to identify the brightest regions
     percentile = int(np.percentile(img, 95))
+    # Sometimes 95th percentie may turn out to be a really high number
     percentile = min(240, percentile)
 
+    # Thresholding the image using the percentile obtained
     img = cv2.threshold(img, percentile, 255, cv2.THRESH_BINARY)[1]
     cv_show(img, "Threshed", is_debug=is_debug)
 
     # find contours in the thresholded image and sort them from top to bottom
+    # top-to-bottom is needed since in PAN card, name comes before father's name
     cnts = cv2.findContours(img.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cnts = imutils.grab_contours(cnts)
     (cnts, boundingBoxes) = sort_contours(cnts, method="top-to-bottom")
+
     rois = []
+    # Loop over the contours and select the ones that satisfy our criteria
     for c in cnts:
-        # compute the bounding box of the contour and use the contour to
-        # compute the aspect ratio and coverage ratio of the bounding box
-        # width to the width of the image
+
+        # compute the bounding box of the contour
         (x, y, w, h) = cv2.boundingRect(c)
+
+        # Calculating aspect ratio and coverage width of the contour
+        # These parameters can be used to identify rectangular contours
         ar = w / float(h)
         crWidth = w / float(orig.shape[1])
-        # check to see if the aspect ratio and coverage width are within
-        # acceptable criteria
 
         if ar > 5 and crWidth > 0.10 and crWidth < 0.6:
+
+            # Adding padding to the contour since Tesseract will need it
             pX = int((x + w) * 0.03)
             pY = int((y + h) * 0.02)
             (x, y) = (x - pX, y - pY)
             (w, h) = (w + (pX * 2), h + (pY * 2))
-            # extract the ROI from the image and draw a bounding box
-            # surrounding the MRZ
+
+            # extract the ROI from the image
             roi = orig[y:y + h, x:x + w].copy()
             cv_show(roi, "Region of interest", is_debug=is_debug)
             rois.append(roi)
@@ -131,6 +140,11 @@ def extract_rois(img):
     return rois
 
 def ocr_roi(rois):
+    """
+    Function to do the OCR
+    Inputs: rois: A list of Images
+    Returns: A List of strings. One for each incoming Image
+    """
     # Initializing PyTessBaseApi again and again adds an unnecessary overhead.
     # So initializing it just once
     # PSM.SINGLE_LINE degrades performace
@@ -143,15 +157,31 @@ def ocr_roi(rois):
     return extracted_text
 
 def extract_fields(extracted_info):
+    """
+    Function to extract required information from the text parsed by OCR
+    Inputs: extracted_info: A list of strings
+    Return: A dictionary containing the required Information
+    """
+
+    # This is pattern for matching lines that are not of use to us
     reject_pat = r"\bGOVT\b|\bOF\b|\bINDIA\b|\bNumber\b|\bINCOME\b|\bTAX\b|\bDEPARTMENT\b"
+
+    # Identifying names. Utilizing the fact that are going to be in ALL CAPS
     name_pat = r"^[A-Z ]+$"
+
+    # Pattern for PAN card
     pan_pat = r"^[A-Z]+[0-9]+[A-Z]+$"
+
     pan, date = None, None
     names = []
+
+    # Looping over all the extracted strings to find the strings that match patterns above
     for elem in extracted_info:
         elem = elem.strip()
+
         if re.search(reject_pat, elem):
             continue
+
         if re.search(name_pat, elem):
             if len(elem.split()) <= 4:
                 names.append(elem)
@@ -159,6 +189,7 @@ def extract_fields(extracted_info):
             pan = elem
         elif elem.count(r"/") >= 1:
             date = elem
+
     name, fname = None, None
     if len(names) >= 2:
         name, fname = names[:2]
@@ -167,6 +198,9 @@ def extract_fields(extracted_info):
     return {'name':name, 'fname':fname, 'pan':pan, 'date':date}
 
 def extract_info(img):
+    """
+    Takes an OpenCV image of PAN card as input and returns extracted information in a dictionary
+    """
     rois = extract_rois(img)
     ocr_info = ocr_roi(rois)
     extracted_info = extract_fields(ocr_info)
