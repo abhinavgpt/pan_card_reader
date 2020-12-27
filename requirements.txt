@@ -1,0 +1,8 @@
+tesserocr
+opencv-python
+Pillow
+imutils
+flask
+Flask-Bootstrap
+Flask-SQLAlchemy
+Flask-WTF
