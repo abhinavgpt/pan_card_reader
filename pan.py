@@ -149,7 +149,7 @@ def ocr_roi(rois):
     # So initializing it just once
     # PSM.SINGLE_LINE degrades performace
     extracted_text = []
-    with PyTessBaseAPI(path=os.getcwd()) as api:
+    with PyTessBaseAPI(path=os.path.join(os.getcwd(), 'tessdata')) as api:
         for roi in rois:
             # Converting the OpenCV image to PIL image for tesseract
             api.SetImage(Image.fromarray(roi))
