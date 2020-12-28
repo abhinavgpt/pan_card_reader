@@ -63,6 +63,7 @@ def extract_rois(img):
     height, width, channels = img.shape
     new_height = 600
     img = imutils.resize(img, height=new_height) # imutils.resize will conserve aspect ratio
+    _, new_width, __ = img.shape
     cv_show(img, title="Read file", is_debug=is_debug)
 
     orig = img.copy()
@@ -128,8 +129,12 @@ def extract_rois(img):
             # Adding padding to the contour since Tesseract will need it
             pX = int((x + w) * 0.03)
             pY = int((y + h) * 0.02)
-            (x, y) = (x - pX, y - pY)
-            (w, h) = (w + (pX * 2), h + (pY * 2))
+
+            # min, max functions will be used to handle boundary cases
+            x = max(0, x - pX)
+            y = max(0, y - pY)
+            w = min(w + (pX * 2), new_width)
+            h = min(h + (pY * 2), new_height)
 
             # extract the ROI from the image
             roi = orig[y:y + h, x:x + w].copy()
